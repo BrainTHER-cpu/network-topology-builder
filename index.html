@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Network Topology Builder</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: #1f2937;
+      color: white;
+    }
+
+    .topbar button {
+      margin-left: 8px;
+      padding: 8px 12px;
+      border: none;
+      background: #3b82f6;
+      color: white;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    .layout {
+      display: flex;
+      height: calc(100vh - 56px);
+    }
+
+    .sidebar {
+      width: 200px;
+      background: white;
+      border-right: 1px solid #ddd;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    .device {
+      padding: 10px;
+      margin-bottom: 10px;
+      background: #e5e7eb;
+      border-radius: 8px;
+      cursor: grab;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background-size: 20px 20px;
+      background-image:
+        linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+        linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
+    }
+
+    #svgLayer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .node {
+      position: absolute;
+      width: 90px;
+      padding: 10px 6px;
+      background: white;
+      border: 2px solid #3b82f6;
+      border-radius: 10px;
+      text-align: center;
+      cursor: move;
+      user-select: none;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      box-sizing: border-box;
+    }
+
+    .node.selected {
+      border-color: #ef4444;
+    }
+
+    .hint {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #111827;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      display: none;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>Network Topology Builder</div>
+    <div>
+      <button id="connectBtn">Connect</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div class="device" draggable="true" data-type="Router">Router</div>
+      <div class="device" draggable="true" data-type="Switch">Switch</div>
+      <div class="device" draggable="true" data-type="Server">Server</div>
+      <div class="device" draggable="true" data-type="PC">PC</div>
+      <div class="device" draggable="true" data-type="Firewall">Firewall</div>
+    </div>
+
+    <div class="canvas-wrap" id="canvas">
+      <svg id="svgLayer"></svg>
+      <div class="hint" id="hint">Click 2 devices to connect them</div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const svgLayer = document.getElementById("svgLayer");
+    const hint = document.getElementById("hint");
+
+    let nodes = [];
+    let links = [];
+    let draggedType = null;
+    let connectMode = false;
+    let firstNode = null;
+    let nextId = 1;
+
+    // what type of device is being dragged
+    document.querySelectorAll(".device").forEach(device => {
+      device.addEventListener("dragstart", e => {
+        draggedType = e.target.dataset.type;
+      });
+    });
+
+    canvas.addEventListener("dragover", e => e.preventDefault());
+
+    // device into canvas = added
+    canvas.addEventListener("drop", e => {
+      e.preventDefault();
+      if (!draggedType) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      addNode(draggedType, x, y);
+      draggedType = null;
+    });
+
+    // had function katzid node jdida (GPT did it, it works fine, no need to change)
+    function addNode(type, x, y) {
+      nodes.push({
+        id: nextId++,
+        type: type,
+        name: type,
+        x: x,
+        y: y
+      });
+      render();
+    }
+
+    // connection rules
+    function isValidConnection(typeA, typeB) {
+      const rules = {
+        PC: ["Switch"],
+        Server: ["Switch"],
+        Router: ["Switch", "Firewall"],
+        Firewall: ["Router"],
+        Switch: ["PC", "Server", "Router"]
+      };
+
+      return (
+        (rules[typeA] && rules[typeA].includes(typeB)) ||
+        (rules[typeB] && rules[typeB].includes(typeA))
+      );
+    }
+
+    // had function kat7yed node b id dyalha w ga3 connections dialha
+    function deleteNode(nodeId) {
+      nodes = nodes.filter(node => node.id !== nodeId);
+      links = links.filter(link => link.from !== nodeId && link.to !== nodeId);
+
+      if (firstNode && firstNode.id === nodeId) {
+        firstNode = null;
+      }
+
+      render();
+    }
+
+    // drawing function li katrenderi nodes w links
+    function render() {
+      document.querySelectorAll(".node").forEach(n => n.remove());
+      svgLayer.innerHTML = "";
+
+      // connections rendering
+      links.forEach(link => {
+        const a = nodes.find(n => n.id === link.from);
+        const b = nodes.find(n => n.id === link.to);
+        if (!a || !b) return;
+
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", a.x + 45);
+        line.setAttribute("y1", a.y + 25);
+        line.setAttribute("x2", b.x + 45);
+        line.setAttribute("y2", b.y + 25);
+        line.setAttribute("stroke", link.valid ? "green" : "red");
+        line.setAttribute("stroke-width", "3");
+        svgLayer.appendChild(line);
+      });
+
+      // nodes rendering
+      nodes.forEach(node => {
+        const div = document.createElement("div");
+        div.className = "node";
+        div.style.left = node.x + "px";
+        div.style.top = node.y + "px";
+        div.textContent = node.name;
+        div.title = "Double click to rename | Right click to delete";
+
+        if (connectMode && firstNode && firstNode.id === node.id) {
+          div.classList.add("selected");
+        }
+
+        // connect mode: click connect to connect.?
+        div.addEventListener("click", () => {
+          if (!connectMode) return;
+
+          if (!firstNode) {
+            firstNode = node;
+            render();
+          } else if (firstNode.id !== node.id) {
+            const exists = links.some(
+              l =>
+                (l.from === firstNode.id && l.to === node.id) ||
+                (l.from === node.id && l.to === firstNode.id)
+            );
+
+            if (!exists) {
+              const valid = isValidConnection(firstNode.type, node.type);
+              links.push({
+                from: firstNode.id,
+                to: node.id,
+                valid: valid
+              });
+            }
+
+            firstNode = null;
+            render();
+          }
+        });
+
+        // double click to change the name
+        div.addEventListener("dblclick", () => {
+          const newName = prompt("Device name:", node.name);
+          if (newName && newName.trim() !== "") {
+            node.name = newName.trim();
+            render();
+          }
+        });
+
+        // right click bach t7yed device w automatiquement ga3 connexions dyalo kayt7ydo
+        div.addEventListener("contextmenu", e => {
+          e.preventDefault();
+          deleteNode(node.id);
+        });
+
+        makeDraggable(div, node);
+        canvas.appendChild(div);
+      });
+    }
+
+    // had function katkhelli node t7rk
+    function makeDraggable(element, node) {
+      let offsetX = 0;
+      let offsetY = 0;
+      let dragging = false;
+
+      element.addEventListener("mousedown", e => {
+        // ila right click mandbdawch drag
+        if (e.button !== 0) return;
+
+        dragging = true;
+        offsetX = e.offsetX;
+        offsetY = e.offsetY;
+      });
+
+      document.addEventListener("mousemove", e => {
+        if (!dragging) return;
+        const rect = canvas.getBoundingClientRect();
+        node.x = e.clientX - rect.left - offsetX;
+        node.y = e.clientY - rect.top - offsetY;
+        render();
+      });
+
+      document.addEventListener("mouseup", () => {
+        dragging = false;
+      });
+    }
+
+    // button dyal connect mode
+    document.getElementById("connectBtn").addEventListener("click", () => {
+      connectMode = !connectMode;
+      firstNode = null;
+      hint.style.display = connectMode ? "block" : "none";
+      render();
+    });
+
+    // clear button deletes all
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      nodes = [];
+      links = [];
+      firstNode = null;
+      render();
+    });
+  </script>
+</body>
+</html>
